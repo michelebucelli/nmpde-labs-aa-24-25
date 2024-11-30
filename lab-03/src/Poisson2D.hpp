@@ -6,10 +6,11 @@
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
 
-#include <deal.II/fe/fe_q.h>
+#include <deal.II/fe/fe_simplex_p.h>
 #include <deal.II/fe/fe_values.h>
 
 #include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/grid_in.h>
 #include <deal.II/grid/grid_out.h>
 #include <deal.II/grid/tria.h>
 
@@ -23,6 +24,7 @@
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 
@@ -35,7 +37,7 @@ class Poisson2D
 {
 public:
   // Physical dimension (1D, 2D, 3D)
-  static constexpr unsigned int dim = 1;
+  static constexpr unsigned int dim = 2;
 
   // Diffusion coefficient.
   // In deal.ii, functions are implemented by deriving the dealii::Function
@@ -67,10 +69,10 @@ public:
 
     // Evaluation.
     virtual double
-    value(const Point<dim> &p,
+    value(const Point<dim> & /*p*/,
           const unsigned int /*component*/ = 0) const override
     {
-      // Todo.
+      return -5.0;
     }
   };
 
@@ -87,7 +89,7 @@ public:
     value(const Point<dim> &p,
           const unsigned int /*component*/ = 0) const override
     {
-      // Todo.
+      return p[0] + p[1];
     }
   };
 
@@ -104,13 +106,13 @@ public:
     value(const Point<dim> &p,
           const unsigned int /*component*/ = 0) const override
     {
-      // Todo.
+      return p[1];
     }
   };
 
   // Constructor.
-  Poisson2D(const unsigned int &N_, const unsigned int &r_)
-    : N(N_)
+  Poisson2D(const std::string &mesh_file_name_, const unsigned int &r_)
+    : mesh_file_name(mesh_file_name_)
     , r(r_)
   {}
 
@@ -131,8 +133,8 @@ public:
   output() const;
 
 protected:
-  // N+1 is the number of elements.
-  const unsigned int N;
+  // Path to the mesh file.
+  const std::string mesh_file_name;
 
   // Polynomial degree.
   const unsigned int r;
@@ -163,6 +165,9 @@ protected:
   // We use a unique_ptr here so that we can choose the type and order of the
   // quadrature formula at runtime (the order is a constructor parameter).
   std::unique_ptr<Quadrature<dim>> quadrature;
+
+  // Quadrature formula used on boundary lines.
+  std::unique_ptr<Quadrature<dim - 1>> quadrature_boundary;
 
   // DoF handler.
   DoFHandler<dim> dof_handler;
