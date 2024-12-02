@@ -7,7 +7,7 @@ Poisson3D::setup()
 
   // Create the mesh.
   {
-    std::cout << "Initializing the mesh from " << mesh_file_name << std::endl;
+    std::cout << "Initializing the mesh" << std::endl;
 
     // Read the mesh from file:
     GridIn<dim> grid_in;
@@ -151,17 +151,13 @@ Poisson3D::assemble()
             {
               for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
-                  // FEValues::shape_grad(i, q) returns the gradient of the i-th
-                  // basis function at the q-th quadrature node, already mapped
-                  // on the physical element: we don't have to deal with the
-                  // mapping, it's all hidden inside FEValues.
+                  // Diffusion term.
                   cell_matrix(i, j) += diffusion_coefficient.value(
                                          fe_values.quadrature_point(q)) // mu(x)
                                        * fe_values.shape_grad(i, q)     // (I)
                                        * fe_values.shape_grad(j, q)     // (II)
                                        * fe_values.JxW(q);              // (III)
 
-                  // Reaction term (exercise 1 only).
                   cell_matrix(i, j) +=
                     reaction_coefficient.value(
                       fe_values.quadrature_point(q)) * // sigma(x)
@@ -199,17 +195,8 @@ Poisson3D::assemble()
 
     std::map<types::boundary_id, const Function<dim> *> boundary_functions;
 
-    // Exercise 1.
-    boundary_functions[0] = &function_g;
-    boundary_functions[1] = &function_g;
-    boundary_functions[2] = &function_g;
-    boundary_functions[3] = &function_g;
-
-    // Exercise 2.
-    // Functions::ConstantFunction<dim> function_zero(0.0);
-    // Functions::ConstantFunction<dim> function_one(1.0);
-    // boundary_functions[0] = &function_zero;
-    // boundary_functions[1] = &function_one;
+    for (unsigned int i = 0; i < 6; ++i)
+      boundary_functions[i] = &function_g;
 
     // interpolate_boundary_values fills the boundary_values map.
     VectorTools::interpolate_boundary_values(dof_handler,
@@ -231,16 +218,27 @@ Poisson3D::solve()
 
   // Here we specify the maximum number of iterations of the iterative solver,
   // and its tolerance.
-  SolverControl solver_control(1000, 1e-6 * system_rhs.l2_norm());
+  SolverControl solver_control(10000, 1e-6 * system_rhs.l2_norm());
 
-  // Since the system matrix is symmetric and positive definite, we solve the
-  // system using the conjugate gradient method.
-  SolverCG<Vector<double>> solver(solver_control);
+  // If the preconditioner is not symmetric, we need to use the GMRES method.
+  SolverGMRES<Vector<double>> solver(solver_control);
+
+  // PreconditionIdentity preconditioner;
+
+  // PreconditionJacobi preconditioner;
+  // preconditioner.initialize(system_matrix);
+
+  PreconditionSOR preconditioner;
+  preconditioner.initialize(
+    system_matrix, PreconditionSOR<SparseMatrix<double>>::AdditionalData(1.0));
+
+  // PreconditionSSOR preconditioner;
+  // preconditioner.initialize(
+  //   system_matrix,
+  //   PreconditionSSOR<SparseMatrix<double>>::AdditionalData(1.0));
 
   std::cout << "  Solving the linear system" << std::endl;
-  // We don't use any preconditioner for now, so we pass the identity matrix
-  // as preconditioner.
-  solver.solve(system_matrix, solution, system_rhs, PreconditionIdentity());
+  solver.solve(system_matrix, solution, system_rhs, preconditioner);
   std::cout << "  " << solver_control.last_step() << " CG iterations"
             << std::endl;
 }
@@ -273,33 +271,4 @@ Poisson3D::output() const
   std::cout << "Output written to " << output_file_name << std::endl;
 
   std::cout << "===============================================" << std::endl;
-}
-
-
-double
-Poisson3D::compute_error(const VectorTools::NormType &norm_type) const
-{
-  FE_SimplexP<dim> fe_linear(1);
-  MappingFE        mapping(fe_linear);
-
-  // The error is an integral, and we approximate that integral using a
-  // quadrature formula. To make sure we are accurate enough, we use a
-  // quadrature formula with one node more than what we used in assembly.
-  const QGaussSimplex<dim> quadrature_error(r + 2);
-
-  // First we compute the norm on each element, and store it in a vector.
-  Vector<double> error_per_cell(mesh.n_active_cells());
-  VectorTools::integrate_difference(mapping,
-                                    dof_handler,
-                                    solution,
-                                    ExactSolution(),
-                                    error_per_cell,
-                                    quadrature_error,
-                                    norm_type);
-
-  // Then, we add out all the cells.
-  const double error =
-    VectorTools::compute_global_error(mesh, error_per_cell, norm_type);
-
-  return error;
 }
