@@ -117,7 +117,25 @@ Heat::assemble_matrices()
       cell_mass_matrix      = 0.0;
       cell_stiffness_matrix = 0.0;
 
-      // TODO: assemble local mass and local stiffness.
+      for (unsigned int q = 0; q < n_q; ++q)
+        {
+          // Evaluate coefficients on this quadrature node.
+          const double mu_loc = mu.value(fe_values.quadrature_point(q));
+
+          for (unsigned int i = 0; i < dofs_per_cell; ++i)
+            {
+              for (unsigned int j = 0; j < dofs_per_cell; ++j)
+                {
+                  cell_mass_matrix(i, j) += fe_values.shape_value(i, q) *
+                                            fe_values.shape_value(j, q) /
+                                            deltat * fe_values.JxW(q);
+
+                  cell_stiffness_matrix(i, j) +=
+                    mu_loc * fe_values.shape_grad(i, q) *
+                    fe_values.shape_grad(j, q) * fe_values.JxW(q);
+                }
+            }
+        }
 
       cell->get_dof_indices(dof_indices);
 
@@ -128,7 +146,15 @@ Heat::assemble_matrices()
   mass_matrix.compress(VectorOperation::add);
   stiffness_matrix.compress(VectorOperation::add);
 
-  // TODO: build the LHS and RHS matrices.
+  // We build the matrix on the left-hand side of the algebraic problem (the one
+  // that we'll invert at each timestep).
+  lhs_matrix.copy_from(mass_matrix);
+  lhs_matrix.add(theta, stiffness_matrix);
+
+  // We build the matrix on the right-hand side (the one that multiplies the old
+  // solution un).
+  rhs_matrix.copy_from(mass_matrix);
+  rhs_matrix.add(-(1.0 - theta), stiffness_matrix);
 }
 
 void
@@ -157,7 +183,28 @@ Heat::assemble_rhs(const double &time)
 
       cell_rhs = 0.0;
 
-      // TODO: assemble local RHS.
+      for (unsigned int q = 0; q < n_q; ++q)
+        {
+          // We need to compute the forcing term at the current time (tn+1) and
+          // at the old time (tn). deal.II Functions can be computed at a
+          // specific time by calling their set_time method.
+
+          // Compute f(tn+1)
+          forcing_term.set_time(time);
+          const double f_new_loc =
+            forcing_term.value(fe_values.quadrature_point(q));
+
+          // Compute f(tn)
+          forcing_term.set_time(time - deltat);
+          const double f_old_loc =
+            forcing_term.value(fe_values.quadrature_point(q));
+
+          for (unsigned int i = 0; i < dofs_per_cell; ++i)
+            {
+              cell_rhs(i) += (theta * f_new_loc + (1.0 - theta) * f_old_loc) *
+                             fe_values.shape_value(i, q) * fe_values.JxW(q);
+            }
+        }
 
       cell->get_dof_indices(dof_indices);
       system_rhs.add(dof_indices, cell_rhs);
@@ -205,5 +252,35 @@ Heat::output(const unsigned int &time_step) const
 void
 Heat::solve()
 {
-  // TODO...
+  assemble_matrices();
+
+  pcout << "===============================================" << std::endl;
+
+  // Apply the initial condition.
+  {
+    pcout << "Applying the initial condition" << std::endl;
+
+    VectorTools::interpolate(dof_handler, u_0, solution_owned);
+    solution = solution_owned;
+
+    // Output the initial solution.
+    output(0);
+    pcout << "-----------------------------------------------" << std::endl;
+  }
+
+  unsigned int time_step = 0;
+  double       time      = 0;
+
+  while (time < T)
+    {
+      time += deltat;
+      ++time_step;
+
+      pcout << "n = " << std::setw(3) << time_step << ", t = " << std::setw(5)
+            << time << ":" << std::flush;
+
+      assemble_rhs(time);
+      solve_time_step();
+      output(time_step);
+    }
 }
