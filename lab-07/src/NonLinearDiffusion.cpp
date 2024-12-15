@@ -155,10 +155,30 @@ NonLinearDiffusion::assemble_system()
             {
               for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
-                  // TODO
+                  cell_matrix(i, j) +=
+                    (2.0 * mu_1_loc * solution_loc[q] *
+                     fe_values.shape_value(j, q)) *
+                    scalar_product(solution_gradient_loc[q],
+                                   fe_values.shape_grad(i, q)) *
+                    fe_values.JxW(q);
+
+                  cell_matrix(i, j) +=
+                    (mu_0_loc + mu_1_loc * solution_loc[q] * solution_loc[q]) *
+                    scalar_product(fe_values.shape_grad(j, q),
+                                   fe_values.shape_grad(i, q)) *
+                    fe_values.JxW(q);
                 }
 
-              // TODO
+              // -F(v)
+              cell_rhs(i) +=
+                f_loc * fe_values.shape_value(i, q) * fe_values.JxW(q);
+
+              // a(u)(v)
+              cell_rhs(i) -=
+                (mu_0_loc + mu_1_loc * solution_loc[q] * solution_loc[q]) *
+                scalar_product(solution_gradient_loc[q],
+                               fe_values.shape_grad(i, q)) *
+                fe_values.JxW(q);
             }
         }
 
@@ -210,7 +230,37 @@ NonLinearDiffusion::solve_newton()
 {
   pcout << "===============================================" << std::endl;
 
-  // TODO...
+  const unsigned int n_max_iters        = 1000;
+  const double       residual_tolerance = 1e-6;
+
+  unsigned int n_iter        = 0;
+  double       residual_norm = residual_tolerance + 1;
+
+  while (n_iter < n_max_iters && residual_norm > residual_tolerance)
+    {
+      assemble_system();
+      residual_norm = residual_vector.l2_norm();
+
+      pcout << "Newton iteration " << n_iter << "/" << n_max_iters
+            << " - ||r|| = " << std::scientific << std::setprecision(6)
+            << residual_norm << std::flush;
+
+      // We actually solve the system only if the residual is larger than the
+      // tolerance.
+      if (residual_norm > residual_tolerance)
+        {
+          solve_system();
+
+          solution_owned += delta_owned;
+          solution = solution_owned;
+        }
+      else
+        {
+          pcout << " < tolerance" << std::endl;
+        }
+
+      ++n_iter;
+    }
 
   pcout << "===============================================" << std::endl;
 }

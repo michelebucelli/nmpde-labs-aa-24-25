@@ -161,10 +161,19 @@ LinearElasticity::assemble_system()
             {
               for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
-                  // TODO
+                  cell_matrix(i, j) +=
+                    (mu_loc *
+                       scalar_product(fe_values[displacement].gradient(j, q),
+                                      fe_values[displacement].gradient(i, q)) +
+                     lambda_loc * fe_values[displacement].divergence(j, q) *
+                       fe_values[displacement].divergence(i, q)) *
+                    fe_values.JxW(q);
                 }
 
-              // TODO
+              cell_rhs(i) +=
+                scalar_product(f_loc_tensor,
+                               fe_values[displacement].value(i, q)) *
+                fe_values.JxW(q);
             }
         }
 
