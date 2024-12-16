@@ -138,8 +138,10 @@ HeatNonLinear::assemble_system()
             {
               for (unsigned int j = 0; j < dofs_per_cell; ++j)
                 {
-                  // Time derivative.
-                  // TODO.
+                  // Mass matrix.
+                  cell_matrix(i, j) += fe_values.shape_value(i, q) *
+                                       fe_values.shape_value(j, q) / deltat *
+                                       fe_values.JxW(q);
 
                   // Non-linear stiffness matrix, first term.
                   cell_matrix(i, j) +=
@@ -159,8 +161,10 @@ HeatNonLinear::assemble_system()
 
               // Assemble the residual vector (with changed sign).
 
-              // Time derivative.
-              // TODO.
+              // Time derivative term.
+              cell_residual(i) -= (solution_loc[q] - solution_old_loc[q]) /
+                                  deltat * fe_values.shape_value(i, q) *
+                                  fe_values.JxW(q);
 
               // Diffusion term.
               cell_residual(i) -=
@@ -295,5 +299,41 @@ HeatNonLinear::output(const unsigned int &time_step) const
 void
 HeatNonLinear::solve()
 {
-  // TODO.
+  pcout << "===============================================" << std::endl;
+
+  time = 0.0;
+
+  // Apply the initial condition.
+  {
+    pcout << "Applying the initial condition" << std::endl;
+
+    VectorTools::interpolate(dof_handler, u_0, solution_owned);
+    solution = solution_owned;
+
+    // Output the initial solution.
+    output(0);
+    pcout << "-----------------------------------------------" << std::endl;
+  }
+
+  unsigned int time_step = 0;
+
+  while (time < T - 0.5 * deltat)
+    {
+      time += deltat;
+      ++time_step;
+
+      // Store the old solution, so that it is available for assembly.
+      solution_old = solution;
+
+      pcout << "n = " << std::setw(3) << time_step << ", t = " << std::setw(5)
+            << std::fixed << time << std::endl;
+
+      // At every time step, we invoke Newton's method to solve the non-linear
+      // problem.
+      solve_newton();
+
+      output(time_step);
+
+      pcout << std::endl;
+    }
 }
